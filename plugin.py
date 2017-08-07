@@ -33,8 +33,6 @@ activeUnit=""
 connected=False #The connection object does not give a correct value. 
 mochadST=True   #This boolean will state if Mochad is reachable
 mochadCMD=""
-mochadSend=('','')
-waitRES=False
 
 class BasePlugin:
     enabled = False
@@ -79,7 +77,7 @@ class BasePlugin:
             send("rftopl *\n")
 
     def onMessage(self, Connection, Data):
-        global activeUnit, mochadST, waitRES, mochadSend
+        global activeUnit, mochadST
         cmd=""
         #d=str(Data)[2:-1]
         Domoticz.Debug("Mochad Received:" + str(Data))
@@ -98,9 +96,8 @@ class BasePlugin:
             pos=line.find("Func:")
             cmd=line[pos+6:-1]
             Domoticz.Debug("Command:" + cmd)
-            if waitRES:
-              if mochadSend==(activeUnit,cmd[:3].lower()):
-                waitRES=False
+            #if mochadSend==(activeUnit,cmd[:3].lower()):
+            #  waitRES=False
             #updateDevice(activeUnit,cmd,0)
         
 
@@ -242,21 +239,10 @@ def updateLight(nr, cmd, newLevel):
           sendX10(code, "dim " + str(delta))
 
 def sendX10(code, command, wait=True):
-    global mochadSend, waitRES
     Domoticz.Debug("Try sending to Mochad:" + "pl " + code + " " + command.lower() + "\n")
-    retry=0
-    while waitRES and retry<10:
-      retry+=1
-      Domoticz.Debug("Waiting for MochadResponse: " + str(mochadSend))
-      time.sleep(0.2)
-    if not waitRES:
-      Domoticz.Debug("X10 Plugin send to Mochad:" + "pl " + code + " " + command.lower() + "\n")
-      mochadSend=(code,command[:3].lower())
-      send("pl " + code + " " + command.lower() + "\n")
-      if wait: 
-        waitRES=True
-    else:
-      Domoticz.Log("ERROR: Got no response from Mochad, please retry")
+    Domoticz.Debug("X10 Plugin send to Mochad:" + "pl " + code + " " + command.lower() + "\n")
+    mochadSend=(code,command[:3].lower())
+    send("pl " + code + " " + command.lower() + "\n")
 
 def send(data):
     global connected, con
@@ -267,7 +253,6 @@ def send(data):
       Domoticz.Log("Connection Lost...trying to reconnect..")
       con.Connect()
       time.sleep(0.2)
-    #check if we are waiting for response
     con.Send(data)
 
 def restartMochad():
