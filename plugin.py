@@ -1,10 +1,9 @@
 # X10 Python Plugin 
 #
 # Author: Casper Polhout
-# Version 1.1
 #
 """
-<plugin key="X10_Mochad" name="X10-plugin for Mochad with DIM-support" author="Casper Polhout" version="1.0.0" wikilink="http://" externallink="https://www.google.com/">
+<plugin key="X10_Mochad" name="X10-plugin for Mochad with DIM-support" author="Casper Polhout" version="1.0.1" wikilink="http://" externallink="https://www.google.com/">
  <params>
   <param field="Address" label="Mochad IP Address" width="200px" required="true" default="127.0.0.1"/>
   <param field="Port" label="Mochad Port" width="100px" required="true" default="1099"/>
@@ -29,7 +28,6 @@ import Domoticz
 import time
 import os
 
-version='1,1'
 
 class Mochad:
 
@@ -46,12 +44,11 @@ class Mochad:
         return
 
     def onStart(self):
-        global version
         if Parameters["Mode3"]=="True":
             Domoticz.Debugging(1)
         if len(Parameters["Mode4"])>2:
             self.mochadCMD=Parameters["Mode4"]
-        Domoticz.Log("X10-Mochad module started! version:" + version)
+        Domoticz.Log("X10-Mochad module started!")
         self.con=Domoticz.Connection(Name="Mochad", Transport="TCP/IP", Protocol="line", Address=Parameters["Address"], Port=Parameters["Port"])
         self.con.Connect()
 
