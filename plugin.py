@@ -27,109 +27,166 @@
 import Domoticz
 import time
 import os
-housecodes=['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P']
-con = None 
-activeUnit=""
-connected=False #The connection object does not give a correct value. 
-mochadST=True   #This boolean will state if Mochad is reachable
-mochadCMD=""
 
-class BasePlugin:
-    enabled = False
+
+class Mochad:
+
+    #enabled = False
+    housecodes = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P']
+    con = None
+    activeUnit = ""
+    connected = False  # The connection object does not give a correct value.
+    mochadST = True  # This boolean will state if Mochad is reachable
+    mochadCMD = ""
+
     def __init__(self):
         #self.var = 123
         return
 
     def onStart(self):
-        global con,mochadCMD
         if Parameters["Mode3"]=="True":
             Domoticz.Debugging(1)
         if len(Parameters["Mode4"])>2:
-            mochadCMD=Parameters["Mode4"]
+            self.mochadCMD=Parameters["Mode4"]
         Domoticz.Log("X10-Mochad module started!")
-        con=Domoticz.Connection(Name="Mochad", Transport="TCP/IP", Protocol="line", Address=Parameters["Address"], Port=Parameters["Port"])
-        con.Connect()
+        self.con=Domoticz.Connection(Name="Mochad", Transport="TCP/IP", Protocol="line", Address=Parameters["Address"], Port=Parameters["Port"])
+        self.con.Connect()
 
     def onStop(self):
         Domoticz.Log("onStop called")
-        con.Disconnect()
+        #con.Disconnect()
 
     def onConnect(self, Connection, Status, Description):
-        global connected,mochadST
         Domoticz.Debug("Connection status:" + str(Status))
         Domoticz.Debug("Connection desc:" + str(Description))
-        if con.Connected:
+        if self.con.Connected:
           Domoticz.Debug("Connection bool:TRUE")
         if Status!=0:  #Error conecting
-           connected=False
-           mochadST=False
-           con.Disconnect()
-           restartMochad()
+           self.connected=False
+           self.mochadST=False
+           self.con.Disconnect()
+           self.restartMochad()
            Domoticz.Log("Connection to Mochad error...retry in 10s")
-           con.Connect()
+           self.con.Connect()
         else:
-          connected=True
-          mochadST=True
+          self.connected=True
+          self.mochadST=True
           Domoticz.Log("Connected to Mochad:" + str(Status) + "," + str(Description))
           if Parameters["Mode2"]=="True":
-            send("rftopl 0\n")
+            self.send("rftopl 0\n")
           else:
-            send("rftopl *\n")
+            self.send("rftopl *\n")
 
     def onMessage(self, Connection, Data):
-        global activeUnit, mochadST
-        cmd=""
-        #d=str(Data)[2:-1]
         Domoticz.Debug("Mochad Received:" + str(Data))
         Domoticz.Debug("LINES:" + str(Data.splitlines()))
         for line in Data.splitlines():
           line=str(line)
           Domoticz.Debug("LINE:" + line)
           if "End status" in line:
-            mochadST=True
-            waitRES=False
+            self.mochadST=True
             Domoticz.Debug("Status check succeeded!")
           if "HouseUnit" in line:
-            activeUnit=line[-3:-1]
-            Domoticz.Debug("Unit:" + activeUnit)
+            self.activeUnit=line[-3:-1]
+            Domoticz.Debug("Unit:" + self.activeUnit)
           elif "Func:" in line:
             pos=line.find("Func:")
             cmd=line[pos+6:-1]
             Domoticz.Debug("Command:" + cmd)
             #if mochadSend==(activeUnit,cmd[:3].lower()):
             #  waitRES=False
-            #updateDevice(activeUnit,cmd,0)
+            updateDevice(self.activeUnit,cmd,0)
         
 
     def onCommand(self, Unit, Command, Level, Hue):
         Domoticz.Log("X10 plugin called for Unit " + str(Unit) + ": Parameter '" + str(Command) + "', Level: " + str(Level))
-        updateLight(Unit,str(Command), Level)
+        self.updateLight(Unit,str(Command), Level)
 
 
     def onNotification(self, Name, Subject, Text, Status, Priority, Sound, ImageFile):
         Domoticz.Log("Notification: " + Name + "," + Subject + "," + Text + "," + Status + "," + str(Priority) + "," + Sound + "," + ImageFile)
 
     def onDisconnect(self, Connection):
-        global connected
-        connected=False
+        self.connected=False
         Domoticz.Log("onDisconnect called")
 
     def onHeartbeat(self):
-        global connected, mochadST
-        Domoticz.Debug("onHeartbeat called: MochadStatus: " + str(mochadST))
-        if mochadST==False:
-          restartMochad()
-          mochadST==True
-          con.Connect()
-        if connected and con.Connected:
-          mochadST=False
-          send("st\n")
-          waitRES=True
+        Domoticz.Debug("onHeartbeat called: MochadStatus: " + str(self.mochadST))
+        if self.mochadST==False:
+          self.restartMochad()
+          self.mochadST==True
+          self.con.Connect()
+        if self.connected and self.con.Connected:
+          self.mochadST=False
+          self.send("st\n")
         else:
-          con.Connect()
+          self.con.Connect()
+
+    def code2unit(self,code):
+        unitnr = self.housecodes.index(code[0]) * 16 + int(code[1:])
+        Domoticz.Debug("code=" + code + "   unit=" + str(unitnr))
+        return unitnr
+
+    def unit2code(self,unit):
+        x = divmod(unit, 16)
+        code = self.housecodes[x[0]] + str(x[1])
+        Domoticz.Debug("unit=" + str(unit) + "   code=" + code)
+        return code
+
+
+    def updateLight(self,nr, cmd, newLevel):
+        DumpConfigToLog()
+        code = self.unit2code(nr)
+        lastLevel = int(Devices[nr].LastLevel)
+        Domoticz.Debug("Lastlevel: " + str(lastLevel))
+        if cmd.lower() == 'off':
+            Devices[nr].Update(0, str(newLevel))
+            self.sendX10(code, "off")
+        elif cmd.lower() == 'on':
+            self.sendX10(code, "on")
+            Devices[nr].Update(1, str(newLevel))
+        else:
+            Domoticz.Debug("UPDATING DEVICE TO LEVEL " + str(newLevel) + " IN DOMOTICZ")
+            Devices[nr].Update(1, str(newLevel))
+            self.sendX10(code, "on", wait=False)
+            if newLevel == 15:
+                self.sendX10(code, "bright 32")
+            else:
+                newLevel = int(
+                    newLevel * 100 / 15)  # Switch type has 15 steps, lastLevel is based on 100%, X10 uses 32 steps
+                if newLevel > lastLevel:
+                    dif = newLevel - lastLevel
+                    delta = int(32 / 100 * dif)
+                    self.sendX10(code, "bright " + str(delta))
+                elif newLevel < lastLevel:
+                    dif = lastLevel - newLevel
+                    delta = int(32 / 100 * dif)
+                    self.sendX10(code, "dim " + str(delta))
+
+    def sendX10(self,code, command, wait=True):
+        Domoticz.Debug("Try sending to Mochad:" + "pl " + code + " " + command.lower() + "\n")
+        Domoticz.Debug("X10 Plugin send to Mochad:" + "pl " + code + " " + command.lower() + "\n")
+        self.send("pl " + code + " " + command.lower() + "\n")
+
+    def send(self,data):
+        Domoticz.Debug("Send called")
+        retry = 0
+        while (not (self.connected and self.con.Connected)) and retry < 5:
+            retry += 1
+            Domoticz.Log("Connection Lost...trying to reconnect..")
+            self.con.Connect()
+            time.sleep(0.2)
+        self.con.Send(data)
+
+    def restartMochad(self):
+        if len(self.mochadCMD) > 2:
+            Domoticz.Debug("Restarting Mochad")
+            os.system("pkill -9 -f " + self.mochadCMD)
+            os.system(self.mochadCMD + " >/tmp/mochad.out 2>&1")
+
 
 global _plugin
-_plugin = BasePlugin()
+_plugin = Mochad()
 
 def onStart():
     global _plugin
@@ -178,86 +235,20 @@ def DumpConfigToLog():
         Domoticz.Debug("Device LastLevel: " + str(Devices[x].LastLevel))
     return
 
-def code2unit(code):
-    global housecodes
-    unitnr=housecodes.index(code[0])*16+int(code[1:])
-    Domoticz.Debug("code=" + code + "   unit=" + str(unitnr))
-    return unitnr
 
-def unit2code(unit):
-    global housecodes
-    x=divmod(unit,16)
-    code=housecodes[x[0]]+str(x[1])
-    Domoticz.Debug("unit=" + str(unit) + "   code=" + code)
-    return code
-
-def updateDevice(unit,cmd, newLevel):
-    DumpConfigToLog()
-    global housecodes
-    Domoticz.Debug("updateDevice called:" + str(unit) + "," + cmd + "," + str(newLevel))
-    unitnr=code2unit(unit)
-    if not (unitnr in Devices):
-      #Domoticz.Device(Name=unit, Unit=unitnr, TypeName="Switch", Switchtype=7).Create()
-      Domoticz.Device(Name=unit, Unit=unitnr, Type=17, Subtype=0, Switchtype=7).Create()
-      Domoticz.Log("Created new X10-device:" + unit + " (" + str(unitnr) + ")")
-    if newLevel==0:
-      newLevel=Devices[unitnr].sValue
-    if cmd=='On':
-      Domoticz.Debug("UPDATING DEVICE TO ON IN DOMOTICZ")
-      Devices[unitnr].Update(1,str(newLevel))
-    elif cmd=='Off':
-      Domoticz.Debug("UPDATING DEVICE TO OFF IN DOMOTICZ")
-      Devices[unitnr].Update(0,str(newLevel))
-
-
-def updateLight(nr, cmd, newLevel):
-    DumpConfigToLog()
-    code=unit2code(nr)
-    lastLevel=int(Devices[nr].LastLevel)
-    Domoticz.Debug("Lastlevel: " + str(lastLevel))
-    if cmd.lower()=='off':
-      Devices[nr].Update(0,str(newLevel))
-      sendX10(code, "off")
-    elif cmd.lower()=='on':
-      sendX10(code, "on")
-      Devices[nr].Update(1,str(newLevel))
-    else:
-      Domoticz.Debug("UPDATING DEVICE TO LEVEL " + str(newLevel) + " IN DOMOTICZ")
-      Devices[nr].Update(1,str(newLevel))
-      sendX10(code,"on", wait=False)
-      if newLevel==15:
-        sendX10(code, "bright 32")
-      else: 
-        newLevel=int(newLevel*100/15) #Switch type has 15 steps, lastLevel is based on 100%, X10 uses 32 steps
-        if newLevel>lastLevel:
-          dif=newLevel-lastLevel
-          delta=int(32/100*dif)
-          sendX10(code, "bright " + str(delta))
-        elif newLevel<lastLevel:
-          dif=lastLevel-newLevel
-          delta=int(32/100*dif)
-          sendX10(code, "dim " + str(delta))
-
-def sendX10(code, command, wait=True):
-    Domoticz.Debug("Try sending to Mochad:" + "pl " + code + " " + command.lower() + "\n")
-    Domoticz.Debug("X10 Plugin send to Mochad:" + "pl " + code + " " + command.lower() + "\n")
-    mochadSend=(code,command[:3].lower())
-    send("pl " + code + " " + command.lower() + "\n")
-
-def send(data):
-    global connected, con
-    Domoticz.Debug("Send called")
-    retry=0
-    while (not (connected and con.Connected)) and  retry<5:
-      retry+=1
-      Domoticz.Log("Connection Lost...trying to reconnect..")
-      con.Connect()
-      time.sleep(0.2)
-    con.Send(data)
-
-def restartMochad():
-    global mochadCMD, s
-    if len(mochadCMD)>2:
-      Domoticz.Debug("Restarting Mochad")
-      os.system("pkill -9 -f " + mochadCMD)
-      os.system(mochadCMD + " >/tmp/mochad.out 2>&1")
+def updateDevice(unit, cmd, newLevel):
+        DumpConfigToLog()
+        Domoticz.Debug("updateDevice called:" + str(unit) + "," + cmd + "," + str(newLevel))
+        unitnr = _plugin.code2unit(unit)
+        if not (unitnr in Devices):
+            # Domoticz.Device(Name=unit, Unit=unitnr, TypeName="Switch", Switchtype=7).Create()
+            Domoticz.Device(Name=unit, Unit=unitnr, Type=17, Subtype=0, Switchtype=7).Create()
+            Domoticz.Log("Created new X10-device:" + unit + " (" + str(unitnr) + ")")
+        if newLevel == 0:
+            newLevel = Devices[unitnr].sValue
+        if cmd == 'On':
+            Domoticz.Debug("UPDATING DEVICE TO ON IN DOMOTICZ")
+            Devices[unitnr].Update(1, str(newLevel))
+        elif cmd == 'Off':
+            Domoticz.Debug("UPDATING DEVICE TO OFF IN DOMOTICZ")
+            Devices[unitnr].Update(0, str(newLevel))
